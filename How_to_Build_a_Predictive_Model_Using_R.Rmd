@@ -1,0 +1,180 @@
+---
+title: "How to Build a Predictive Model using R"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+---
+
+Jan 20 2015
+Andrew Tait
+
+As the availability of high quality data continues to grow, the most successful organizations will be those that can draw value from it. This requires powerful analysis tools that can transform data into useful results.
+
+One such tool is R—a popular open-source language and environment for statistical analysis. In a recent survey, data scientists identified R as the tool they used most, after databases.
+
+While R is a single workstation application, its capabilities can be utilized in big data environments using the RHadoop package.
+
+In this article we’ll use R’s predictive analysis capabilities to diagnose whether, based on a number of observed medical characteristics, patients have breast cancer.
+
+## Obtaining and installing R
+R is available for Windows, OSX and Linux. It can be downloaded from the R Project website which also contains guidance on installing and learning how to use the tool.
+
+## Obtaining the data set
+The University of California, Irvine (UCI) maintains a repository of machine learning data sets. We’ll use their data set of breast cancer cases from Wisconsin to build a predictive model that distinguishes between malignant and benign growths.
+
+Download this data set and then load it into R. Assuming you saved the file as “C:\breast-cancer-wisconsin.data.txt” you’d load it using:
+```{r 1, echo=TRUE, warning=TRUE}
+cancerData <- read.csv("C:\\Users\\Administrator\\Documents\\TG\\Werk\\TechMeUp\\Onderzoek\\Data\\Analytics\\Classificatie\\R\\data\\breast-cancer-wisconsin.data", stringsAsFactors = FALSE)
+```
+
+The *str* function allows us to examine the structure of the data set:
+
+```{r 2, echo=TRUE, warning=TRUE}
+str(cancerData)
+
+```
+
+This will produce the above summary (truncated).
+
+There are 698 diagnoses each containing 11 data points. These data points are unhelpfully named “Xn”. Fortunately, the definitions for each of these data points are contained in the UCI repository:
+
+1.	Sample code number (ID number)
+2.	Clump Thickness (1–10)
+3.	Uniformity of Cell Size (1–10)
+4.	Uniformity of Cell Shape (1–10)
+5.	Marginal Adhesion (1–10)
+6.	Single Epithelial Cell Size (1–10)
+7.	Bare Nuclei (1–10)
+8.	Bland Chromatin (1–10)
+9.	Normal Nucleoli (1–10)
+10.	Mitoses (1–10)
+11.	Class: (2 for benign, 4 for malignant)
+
+Note that all the variables, apart from the diagnoses and the (unnecessary) ID, are in the same range (i.e. 1-10).
+
+Let’s add these names to the data set:
+
+```{r 3, echo=TRUE, warning=TRUE}
+names(cancerData) <- c("id", "clumpThickness", "uniformityOfCellSize",
+"uniformityOfCellShape", "marginalAdhesion", "singleEpithelialCellSize",
+"bareNuclei", "blandChromatin", "normalNucleoli", "mitoses", "class")
+```
+
+Invoking the *str* function again gives us:
+
+```
+'data.frame': 698 obs. of 11 variables:
+$ id : int 1002945 1015425 1016277 1017023 1017122 ...
+$ clumpThickness : int 5 3 6 4 8 1 2 2 4 1 ...
+$ uniformityOfCellSize : int 4 1 8 1 10 1 1 1 2 1 ...
+$ uniformityOfCellShape : int 4 1 8 1 10 1 2 1 1 1 ...
+$ marginalAdhesion : int 5 1 1 3 8 1 1 1 1 1 ...
+$ singleEpithelialCellSize: int 7 2 3 2 7 2 2 2 2 1 ...
+$ bareNuclei : chr "10" "2" "4" "1" ...
+$ blandChromatin : int 3 3 3 3 9 3 3 1 2 3 ...
+$ normalNucleoli : int 2 1 7 1 7 1 1 1 1 1 ...
+$ mitoses : int 1 1 1 1 1 1 1 5 1 1 ...
+$ class : int 2 2 2 2 4 2 2 2 2 2 ...
+```
+
+
+There are three problems with the data set as it stands:
+
+1.	The arbitrary ID data isn’t important in the analysis
+2.	The bare nuclei data has been interpreted as text which suggests the presence of invalid values
+3.	The class—i.e. benign or malignant—is represented by 2 and 4, respectively, which is hardly user-friendly
+
+We’ll address these issues before building our model.
+
+## Preparing the data
+
+Collecting and preparing the data for analysis are often the most involved and time consuming parts of building a predictive model. While the collection was done for us, we still have to do a bit of work to prepare the data.
+We can remove the ID column by setting it to null:
+
+```{r 4, echo=TRUE, warning=TRUE}
+cancerData$id <- NULL
+```
+
+Invoking the str function confirms we now have only 10 variables (truncated):
+
+'data.frame':   698 obs. of  10 variables:
+
+We can convert the bare nuclei data to numeric values. Any values that can’t be converted will be set to “Not Available” (or “NA”). This is achieved using the as.numeric function:
+
+```{r 5, echo=TRUE, warning=TRUE}
+cancerData$bareNuclei <- as.numeric(cancerData$bareNuclei)
+```
+
+We can then use the complete.cases function to identify the rows without missing data:
+
+```{r 6, echo=TRUE, warning=TRUE}
+cancerData <- cancerData[complete.cases(cancerData),]
+```
+
+The str function now indicates that we have 682 complete examples (truncated):
+
+'data.frame':   682 obs. of  10 variables:
+
+Finally, for the data “clean-up” stage, let’s transform classes of 2 and 4 into benign and malignant, respectively:
+
+```{r 7, echo=TRUE, warning=TRUE}
+cancerData$class <- factor(ifelse(cancerData$class == 2, "benign", "malignant"))
+```
+
+str now gives us (excerpted):
+
+$ class : Factor w/ 2 levels "benign","malignant": 1 1 1 1 2 ...
+
+## Building the model
+After we build our model we’ll want to evaluate its predictive power. This means siphoning off some of the data for testing—there’s little point quizzing the model with answers it already knows!
+
+A 70/30 split seems reasonable. 70% is 477 cases, so the first 477 cases are reserved for training and the remaining 205 cases will be used for testing. In addition, we need to separate out the medical observations (first 9 columns) from the diagnoses (last column). The data is split as follows:
+
+```{r 8, echo=TRUE, warning=TRUE}
+trainingSet <- cancerData[1:477, 1:9]
+testSet <- cancerData[478:682, 1:9]
+```
+
+Similarly, we need to split the diagnoses (benign or malignant) into training and test outcome sets:
+
+```{r 9, echo=TRUE, warning=TRUE}
+trainingOutcomes <- cancerData[1:477, 10]
+testOutcomes <- cancerData[478:682, 10]
+```
+
+**Finally** we are ready to create the model. To do this, load the classification package (library) and run a k-nearest neighbor classification (knn) on the training set and training outcomes. The test data set is also passed in to allow us to evaluate the effectiveness of the model. We choose the number of neighboring data points to be considered in the analysis (i.e. k) to be 21 as that’s the square root of the number of training examples (477). k should be an odd number to avoid “tie-breaker” situations.
+
+```{r 10, echo=TRUE, warning=TRUE}
+sqrt(477)
+```
+
+```{r 11, echo=TRUE, warning=TRUE}
+library(class)
+predictions <- knn(train = trainingSet, cl = trainingOutcomes, k = 21, test = testSet)
+```
+
+The output of the classification is a set of predictions for the 205 test cases. Enter the *predictions* variable in R to view these (excerpted):
+
+```{r 12, echo=TRUE, warning=TRUE}
+predictions
+```
+
+[1] malignant benign    benign    benign    benign
+
+## Evaluating the predictive power of the model
+While we could manually compare the predictions to the known outcomes of the test cases, you won’t be surprised to learn that R can do this for us—via a cross-tabulation:
+
+```{r 13, echo=TRUE, warning=TRUE}
+table(testOutcomes, predictions)
+```
+
+This results in the above output.
+
+The table tells us that all 160 benign cases were predicted correctly, as were all 45 malignant cases—i.e. the model had a perfect score on the test data. If there had been any inaccurate predictions they would have been shown in the top-right or bottom-left cells (both 0 in this example).
+
+## Summary
+That’s all there is to building a predictive model in R. If you want to predict the diagnoses for new cases, just pass them to the knn function as the test set and the predicted diagnoses will be returned.
+
+If you want to learn more about R or predictive analysis, Learning Tree’s “Introduction to Data Science for Big Data Analytics” course covers the topics in more detail—including how to apply them in big data environments.
