@@ -1,0 +1,209 @@
+---
+title: "Data Analysis"
+output: html_notebook
+---
+
+Aakansha Garg, Shubham Sagar,Vishal pagey
+May 20, 2017
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. 
+
+## SUMMARY 
+Summary: Early diagnosis of cancer is critical for its successful treatment. Thus, there is a high demand for accurate and cheap diagnostic methods. In this project we explored the applicability of decision tree machine learning techniques (CART, Random Forests, and Boosted Trees, Naive Bayes) for breast cancer diagnosis using digitized images of tissue samples. 
+
+The data was obtained from UC Irvine Machine Learning Repository (“Breast Cancer Wisconsin data set” created by William H. Wolberg, W. Nick Street, and Olvi L. Mangasarian). 
+
+The most accurate traditional method for diagnostic is a rather invasive technique, called breast biopsy, where a small piece of breast tissue is surgically removed, and then the tissue sample has to be examined by specialist. 
+
+However, a much less invasive technique can be used, where the samples can be obtained by a minimally invasive fine needle aspirate method. The sample obtained by this method can be easily digitized and used for computationally based diagnostic. 
+Using machine learning methods for diagnostic can significantly increase processing speed and on a big scale can make the diagnostic significantly cheaper.
+
+Here we studied the applicability of Random Forests and Boosted Trees methods and Naive Bayes for cancer prediction. We used CART method for comparison as well. The CART model achieved an estimated accuracy of about 91%. Random Forests 94% and Boosted Trees models achieved an estimated accuracy of about 97% on this dataset.
+
+## Data Cleaning and Loading
+First the necessary libraries are loaded in R environment. ggplot library is used to make plots, corrplot is used to make corelation plots, caret is used to make data processing and machine learning
+
+```{r 1}
+library("readr", "dplyr")
+library("ggplot2")
+library("corrplot")
+install.packages("gridExtra")
+library("gridExtra")
+library("pROC")
+library("MASS")
+install.packages("caTools")
+library("caTools")
+library("caret")
+```
+
+## Data loading
+The data (WDBC.dat, Wisconsin Diagnostic Breast Cancer) is taken from UCI Repository and downloaded and saved into the localmachine
+
+```{r 2}
+data <- read.csv(file.choose())
+```
+
+### Seeing the structure and the summary of the data
+
+```{r 3}
+## Reading cancer data
+str(data)
+```
+
+```{r 4}
+data$diagnosis <- as.factor(data$diagnosis)
+data[,33] <- NULL
+```
+```{r 5}
+## We then find summary of the dataset 
+summary(data)
+```
+we find that the data is imbalanced and also there is a lot of corelation between the attributes
+
+```{r 6}
+## we find that there are no missing values
+## we find that data is little unbalanced
+prop.table(table(data$diagnosis))
+```
+```{r 7}
+## we then show some correlation 
+corr_mat <- cor(data[,3:ncol(data)])
+corrplot(corr_mat)
+```
+### Modelling
+We are going to get a training and a testing set to use when building some models:
+
+```{r 8}
+## We are going to get a training and a testing set to use when building some models:
+set.seed(1234)
+data_index <- createDataPartition(data$diagnosis, p=0.7, list = FALSE)
+train_data <- data[data_index, -1]
+test_data <- data[-data_index, -1]
+```
+
+Applying learning models
+
+```{r 9}
+## Applying learning models
+fitControl <- trainControl(method="cv",
+                           number = 5,
+                           preProcOptions = list(thresh = 0.99), # threshold for pca preprocess
+                           classProbs = TRUE,
+                           summaryFunction = twoClassSummary)
+
+```
+
+### Model1: Random Forest
+Random forests or random decision forests are an ensemble learning method for classification, regression and other tasks that operate by constructing a multitude of decision trees at training time and outputting the class that is the mode of the classes (classification) or mean/average prediction (regression) of the individual trees.
+
+Building the model on the training data
+
+```{r 10}
+## random forest
+model_rf <- train(diagnosis~.,
+                  train_data,
+                  method="ranger",
+                  metric="ROC",
+                  #tuneLength=10,
+                  #tuneGrid = expand.grid(mtry = c(2, 3, 6)),
+                  preProcess = c('center', 'scale'),
+                  trControl=fitControl)
+```
+
+Testing on the testing data
+
+```{r 11}
+## testing for random forets
+pred_rf <- predict(model_rf, test_data)
+cm_rf <- confusionMatrix(pred_rf, test_data$diagnosis, positive = "M")
+cm_rf
+```
+We find that accuracy of this model is 95%.
+  
+  
+## Model2: Naive Bayes
+Naive Bayes methods are a set of supervised learning algorithms based on applying Bayes’ theorem with the “naive” assumption of conditional independence between every pair of features given the value of the class variable.
+
+Building and testing the model
+
+```{r 12}
+model_nb <- train(diagnosis~.,
+                  train_data,
+                  method="nb",
+                  metric="ROC",
+                  preProcess=c('center', 'scale'),
+                  trace=FALSE,
+                  trControl=fitControl)
+```
+
+```{r 13}
+## predicting for test data
+pred_nb <- predict(model_nb, test_data)
+cm_nb <- confusionMatrix(pred_nb, test_data$diagnosis, positive = "M")
+cm_nb
+```
+Accuracy of this model is found to be 91%.
+
+
+## Model3:Cart Model
+The Classification And Regression Tree (CART) analysis is an umbrella term used to refer to both of the above procedures, first introduced by Breiman et al. in 1984. Trees used for regression and trees used for classification have some similarities - but also some differences, such as the procedure used to determine where to split.
+
+```{r 14}
+## cart model
+library(rpart)
+library(rattle)
+```
+```{r 15}
+## library(rpart)
+## library(rattle)
+
+set.seed(1)
+cart_model <- train(diagnosis ~ ., train_data, method="rpart")
+```
+
+```{r}
+cart_model
+```
+```{r}
+fancyRpartPlot(cart_model$finalModel, sub="")
+```
+Accuracy was found to be 91%
+
+
+## Model4: Boosted Regression tree
+Boosted Regression Tree (BRT) models are a combination of two techniques: decision tree algorithms and boosting methods. Like Random Forest models, BRTs repeatedly fit many decision trees to improve the accuracy of the model. One of the differences between these two methods is the way in which the data to build the trees is selected.
+
+```{r}
+library("gbm")
+```
+```{r}
+set.seed(1)
+gbm_model <- train(diagnosis ~ ., train_data, method="gbm", verbose=FALSE)
+```
+
+```{r}
+gbm_model
+```
+
+Gradient boosting is a machine learning technique for regression and classification where multiple models are trained sequentially with each model trying to learn the mistakes from the previous models. The individual models are known as weak learners and in the case of gradient boosted decision trees the individual models are decision trees.
+Testing on testing data
+
+```{r}
+gbm_model$finalModel
+```
+```{r}
+#Performance on testing set:
+
+pred5 <- predict(gbm_model, test_data)
+confusionMatrix(pred5, test_data$diagnosis, positive="M")
+```
+Accuracy was found to be 97%
+
+## Accuracy Measure
+Boosted Tree: 97% 
+Random Forest: 94% 
+Naive Bayes: 91% 
+CART : 91%
+
+Boosted tree method has given the best accuracy among the four
+
